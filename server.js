@@ -1,31 +1,42 @@
 import express from "express";
-import { Storage } from "@google-cloud/storage";
+import admin from "firebase-admin";
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-// Initialize Google Cloud Storage client
-// If using environment variable JSON
-let storage;
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
-  storage = new Storage({
-    projectId: credentials.project_id,
-    credentials,
+app.use(express.json()); // parse JSON body
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  const firebaseCreds = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  admin.initializeApp({
+    credential: admin.credential.cert(firebaseCreds),
+    databaseURL: "https://vpms-smart-parking-default-rtdb.asia-southeast1.firebasedatabase.app/"
   });
-} else {
-  // If GOOGLE_APPLICATION_CREDENTIALS points to a file path
-  storage = new Storage();
 }
 
-// Example route: list buckets
-app.get("/buckets", async (req, res) => {
+const db = admin.database();
+
+// Root route
+app.get("/", (req, res) => {
+  res.send("Render server is running! Use /event to send occupancy events.");
+});
+
+// Event route (Arduino will POST here)
+app.post("/event", async (req, res) => {
   try {
-    const [buckets] = await storage.getBuckets();
-    res.json(buckets.map(b => b.name));
+    const { complexId, change } = req.body;
+
+    // Write to Firebase Realtime Database
+    await db.ref(`complexes/${complexId}/events`).push({
+      change,
+      timestamp: Date.now()
+    });
+
+    res.json({ status: "success", complexId, change });
   } catch (err) {
     console.error(err);
-    res.status(500).send("Error listing buckets");
+    res.status(500).send("Error writing to Firebase");
   }
 });
 
