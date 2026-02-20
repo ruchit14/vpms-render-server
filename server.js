@@ -1,50 +1,34 @@
-const express = require("express");
-const admin = require("firebase-admin");
-const cors = require("cors");
+import express from "express";
+import { Storage } from "@google-cloud/storage";
 
 const app = express();
+const port = process.env.PORT || 8080;
 
-app.use(cors());
-app.use(express.json());
+// Initialize Google Cloud Storage client
+// If using environment variable JSON
+let storage;
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  storage = new Storage({
+    projectId: credentials.project_id,
+    credentials,
+  });
+} else {
+  // If GOOGLE_APPLICATION_CREDENTIALS points to a file path
+  storage = new Storage();
+}
 
-// Firebase Init
-const serviceAccount = require("./serviceAccountKey.json");
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://YOUR_PROJECT_ID.asia-southeast1.firebasedatabase.app"
-});
-
-const db = admin.database();
-
-// Health Check
-app.get("/", (req, res) => {
-  res.send("VPMS Render Server Running");
-});
-
-// EVENT API
-app.post("/event", async (req, res) => {
+// Example route: list buckets
+app.get("/buckets", async (req, res) => {
   try {
-    const { complexId, change } = req.body;
-
-    if (!complexId || change === undefined) {
-      return res.status(400).send("Invalid data");
-    }
-
-    const eventRef = db.ref(`events/${complexId}`).push();
-
-    await eventRef.set({
-      change: change,
-      timestamp: Date.now()
-    });
-
-    res.send({ status: "ok" });
-
+    const [buckets] = await storage.getBuckets();
+    res.json(buckets.map(b => b.name));
   } catch (err) {
     console.error(err);
-    res.status(500).send("Server Error");
+    res.status(500).send("Error listing buckets");
   }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log("Server running"));
+app.listen(port, () => {
+  console.log(`Render server running on port ${port}`);
+});
